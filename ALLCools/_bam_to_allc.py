@@ -128,11 +128,79 @@ def _get_bam_chrom_index(bam_path):
     return pd.Index(chrom_set)
 
 
+def reverse_complement(sequence):
+    # Define a dictionary for nucleotide complements
+    complement_dict = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+    # Convert the sequence to uppercase for consistency
+    sequence = sequence.upper()
+    # Use a list comprehension to create the complement sequence
+    complement_sequence = [complement_dict[base] for base in sequence]
+    # Reverse the complement sequence and join it into a string
+    reverse_complement = ''.join(complement_sequence[::-1])
+
+    return reverse_complement
+
+
+def cal_each_single_mC(genotype, qualify_bases, ref_context, num_downstr_bases):
+    mC_baseCounter = Counter()
+    for base in qualify_bases:
+        mC_baseCounter[base] += 1
+
+    mC_info = []
+    if 'C' in genotype and 'G' not in genotype and 'T' not in genotype:
+        mC = mC_baseCounter['C']
+        coverage = mC_baseCounter['C'] + mC_baseCounter['T']
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '+'
+        mC_info = [context, strand, mC, coverage, 'homo_C']
+        mC_info = [mC_info]
+    elif 'C' in genotype and 'T' in genotype:
+        mC = mC_baseCounter['C']
+        coverage = mC_baseCounter['C'] + (mC_baseCounter['T'] - mC_baseCounter['C']) / 2 # assume same coverage on both alleles
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '+'
+        mC_info = [context, strand, mC, coverage, 'heter_CT']
+        mC_info = [mC_info]
+    elif 'G' in genotype and 'C' not in genotype and 'A' not in genotype:
+        mC = mC_baseCounter['G']
+        coverage = mC_baseCounter['G'] + mC_baseCounter['A']
+        ref_context = reverse_complement(ref_context)
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '-'
+        mC_info = [context, strand, mC, coverage, 'homo_G']
+        mC_info = [mC_info]
+    elif 'G' in genotype and 'A' in genotype:
+        mC = mC_baseCounter['G']
+        coverage = mC_baseCounter['G'] + (mC_baseCounter['A'] - mC_baseCounter['G']) / 2 # assume same coverage on both alleles
+        ref_context = reverse_complement(ref_context)
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '-'
+        mC_info = [context, strand, mC, coverage, 'heter_GA']
+        mC_info = [mC_info]
+    elif 'C' in genotype and 'G' in genotype:
+        mC = mC_baseCounter['C']
+        mC_cov = mC_baseCounter['C'] + mC_baseCounter['T']
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '+'
+        mC_info = [context, strand, mC, mC_cov, 'heter_CG']
+
+        reverse_mC = mC_baseCounter['G']
+        reverse_mC_cov = mC_baseCounter['G'] + mC_baseCounter['A']
+        ref_context = reverse_complement(ref_context)
+        context = 'C' + ref_context[num_downstr_bases+1:]
+        strand = '-'
+        reverse_mC_info = [context, strand, reverse_mC, reverse_mC_cov, 'heter_CG']
+        mC_info = [mC_info, reverse_mC_info]
+    return  mC_info
+
+
+
 def _bam_to_allc_worker(
     bam_path,
     reference_fasta,
     fai_df,
     output_path,
+    wgs=None,
     region=None,
     num_upstr_bases=0,
     num_downstr_bases=2,
@@ -170,6 +238,20 @@ def _bam_to_allc_worker(
             universal_newlines=True,
         )
 
+    # read SNP information 
+    if wgs is not None:
+        vcf_fh = pysam.TabixFile(wgs)
+        snp_info = dict()
+        for line in vcf_fh.fetch():
+            row = line.split("\t")
+            allels = [row[3]] + row[4].split(",")
+            ref_pos = int(row[1]) - 1 # pysam is 0-based, vcf file is 1-based
+            pos_key = f'{row[0]}_{row[1]}'
+
+            genotype_idx = [int(x) for x in re.split("\||/", row[-1].split(":")[0])]
+            genotype = [allels[x] for x in genotype_idx]
+            snp_info[pos_key] = genotype
+
     result_handle = pipes.stdout
 
     output_file_handler = open_allc(output_path, mode="w", compresslevel=compress_level)
@@ -187,20 +269,19 @@ def _bam_to_allc_worker(
     cur_out_pos = 0
     cov_dict = collections.defaultdict(int)  # context: cov_total
     mc_dict = collections.defaultdict(int)  # context: mc_total
+    ref_seq = Fasta(reference_fasta)
 
     # process mpileup result
     for line in result_handle:
         total_line += 1
         fields = line.split("\t")
         fields[2] = fields[2].upper()
-        # if chrom changed, read whole chrom seq from fasta
-        if fields[0] != cur_chrom:
-            cur_chrom = fields[0]
-            chr_out_pos_list.append((cur_chrom, str(cur_out_pos)))
-            # get seq for cur_chrom
-            seq = _get_chromosome_sequence_upper(reference_fasta, fai_df, cur_chrom)
+        pos_key = f'{fields[0]}_{fields[1]}'
 
-        if fields[2] not in mc_sites:
+        ref_pos = int(fields[1]) - 1
+        ref_context = str(ref_seq[fields[0]][(ref_pos -num_downstr_bases):(ref_pos+num_downstr_bases+1)]).split("\n")[0].upper() # refseq is 0-based, get the upper and lower 2 bases 
+        
+        if fields[2] not in mc_sites or pos_key not in snp_info:
             continue
 
         # deal with indels
@@ -236,73 +317,83 @@ def _bam_to_allc_worker(
                     index += 1
             read_bases_no_indel += read_bases[prev_index:index]
             fields[4] = read_bases_no_indel
-
-        # count converted and unconverted bases
-        if fields[2] == "C":
-            # mpileup pos is 1-based, turn into 0 based
-            pos = int(fields[1]) - 1
-            try:
-                context = seq[(pos - num_upstr_bases) : (pos + num_downstr_bases + 1)]
-            except Exception:  # complete context is not available, skip
-                continue
-            unconverted_c = fields[4].count(".")
-            converted_c = fields[4].count("T")
-            cov = unconverted_c + converted_c
-            if cov > 0 and len(context) == context_len:
-                line_counts += 1
-                data = (
-                    "\t".join(
-                        [
-                            cur_chrom,
-                            str(pos + 1),
-                            "+",
-                            context,
-                            str(unconverted_c),
-                            str(cov),
-                            "1",
-                        ]
-                    )
-                    + "\n"
-                )
+        
+        # call methylation at SNP
+        if pos_key in snp_info: 
+            genotype = snp_info[pos_key]
+            results = cal_each_single_mC(genotype, fields[4], ref_context, num_downstr_bases)
+            for record in results:
+                context, strand, mC, cov, vartype = record
+                if cov > 0 and len(context) == context_len:
+                data = (f'{row[0]}\t{ref_pos+1}\t{strand}\t{context}\t{mC}\t{cov}\t{vartype}\n')
                 cov_dict[context] += cov
-                mc_dict[context] += unconverted_c
+                mc_dict[context] += mC
                 out += data
                 cur_out_pos += len(data)
 
-        elif fields[2] == "G":
-            pos = int(fields[1]) - 1
-            try:
-                context = "".join(
-                    [
-                        complement[base]
-                        for base in reversed(seq[(pos - num_downstr_bases) : (pos + num_upstr_bases + 1)])
-                    ]
-                )
-            except Exception:  # complete context is not available, skip
-                continue
-            unconverted_c = fields[4].count(",")
-            converted_c = fields[4].count("a")
-            cov = unconverted_c + converted_c
-            if cov > 0 and len(context) == context_len:
-                line_counts += 1
-                data = (
-                    "\t".join(
-                        [
-                            cur_chrom,
-                            str(pos + 1),  # ALLC pos is 1-based
-                            "-",
-                            context,
-                            str(unconverted_c),
-                            str(cov),
-                            "1",
-                        ]
+        else:
+            # count converted and unconverted bases
+            if fields[2] == "C":
+                # mpileup pos is 1-based, turn into 0 based
+                pos = int(fields[1]) - 1
+                try:
+                    context = ref_context[num_downstr_bases:]
+                except Exception:  # complete context is not available, skip
+                    continue
+                unconverted_c = fields[4].count(".")
+                converted_c = fields[4].count("T")
+                cov = unconverted_c + converted_c
+                if cov > 0 and len(context) == context_len:
+                    line_counts += 1
+                    data = (
+                        "\t".join(
+                            [
+                                cur_chrom,
+                                str(pos + 1),
+                                "+",
+                                context,
+                                str(unconverted_c),
+                                str(cov),
+                                "1",
+                            ]
+                        )
+                        + "\n"
                     )
-                    + "\n"
-                )
-                cov_dict[context] += cov
-                mc_dict[context] += unconverted_c
-                out += data
-                cur_out_pos += len(data)
+                    cov_dict[context] += cov
+                    mc_dict[context] += unconverted_c
+                    out += data
+                    cur_out_pos += len(data)
+
+            elif fields[2] == "G":
+                pos = int(fields[1]) - 1
+                try:
+                    ref_context = reverse_complement(ref_context)
+                    context = ref_context[num_downstr_bases:]
+                except Exception:  # complete context is not available, skip
+                    continue
+                unconverted_c = fields[4].count(",")
+                converted_c = fields[4].count("a")
+                cov = unconverted_c + converted_c
+                if cov > 0 and len(context) == context_len:
+                    line_counts += 1
+                    data = (
+                        "\t".join(
+                            [
+                                cur_chrom,
+                                str(pos + 1),  # ALLC pos is 1-based
+                                "-",
+                                context,
+                                str(unconverted_c),
+                                str(cov),
+                                "1",
+                            ]
+                        )
+                        + "\n"
+                    )
+                    cov_dict[context] += cov
+                    mc_dict[context] += unconverted_c
+                    out += data
+                    cur_out_pos += len(data)
 
         if line_counts > buffer_line_number:
             output_file_handler.write(out)
@@ -348,6 +439,7 @@ def _aggregate_count_df(count_dfs):
 def bam_to_allc(
     bam_path,
     reference_fasta,
+    wgs=None,
     output_path=None,
     cpu=1,
     num_upstr_bases=0,
@@ -513,6 +605,7 @@ def bam_to_allc(
             reference_fasta,
             fai_df,
             output_path,
+            wgs=wgs,
             region=None,
             num_upstr_bases=num_upstr_bases,
             num_downstr_bases=num_downstr_bases,

@@ -173,6 +173,12 @@ def bam_to_allc_register_subparser(subparser):
     )
 
     parser.add_argument(
+        "--wgs",
+        type=str,
+        help="The vcf file that has WGS SNPs from the individual",
+    )
+
+    parser.add_argument(
         "--num_upstr_bases",
         type=int,
         default=0,
