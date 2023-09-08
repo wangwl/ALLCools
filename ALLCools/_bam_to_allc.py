@@ -325,6 +325,8 @@ def _bam_to_allc_worker(
         if pos_key in snp_info: 
             genotype = snp_info[pos_key]
             results = cal_mC_atSNP(genotype, fields[4], ref_context, num_downstr_bases)
+            if len(results) == 0:
+                continue
             for record in results:
                 context, strand, mC, cov, vartype = record
                 if cov > 0 and len(context) == context_len:
