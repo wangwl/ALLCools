@@ -242,9 +242,9 @@ def _bam_to_allc_worker(
         )
 
     # read SNP information 
+    snp_info = dict()
     if wgs is not None:
         vcf_fh = pysam.TabixFile(wgs)
-        snp_info = dict()
         for line in vcf_fh.fetch():
             row = line.split("\t")
             allels = [row[3]] + row[4].split(",")
@@ -363,7 +363,7 @@ def _bam_to_allc_worker(
                     data = (
                         "\t".join(
                             [
-                                cur_chrom,
+                                fields[0],
                                 str(ref_pos + 1),
                                 "+",
                                 context,
@@ -393,7 +393,7 @@ def _bam_to_allc_worker(
                     data = (
                         "\t".join(
                             [
-                                cur_chrom,
+                                fields[0],
                                 str(ref_pos + 1),  # ALLC pos is 1-based
                                 "-",
                                 context,
