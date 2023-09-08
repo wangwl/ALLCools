@@ -144,7 +144,7 @@ def reverse_complement(sequence):
     return reverse_complement
 
 
-def cal_each_single_mC(genotype, qualify_bases, ref_context, num_downstr_bases):
+def cal_mC_atSNP(genotype, qualify_bases, ref_context, num_downstr_bases):
     mC_baseCounter = Counter()
     for base in qualify_bases:
         mC_baseCounter[base] += 1
@@ -284,7 +284,7 @@ def _bam_to_allc_worker(
         ref_pos = int(fields[1]) - 1
         ref_context = str(ref_seq[fields[0]][(ref_pos -num_downstr_bases):(ref_pos+num_downstr_bases+1)]).split("\n")[0].upper() # refseq is 0-based, get the upper and lower 2 bases 
         
-        if fields[2] not in mc_sites or pos_key not in snp_info:
+        if fields[2] not in mc_sites and pos_key not in snp_info:
             continue
 
         # deal with indels
@@ -324,7 +324,7 @@ def _bam_to_allc_worker(
         # call methylation at SNP
         if pos_key in snp_info: 
             genotype = snp_info[pos_key]
-            results = cal_each_single_mC(genotype, fields[4], ref_context, num_downstr_bases)
+            results = cal_mC_atSNP(genotype, fields[4], ref_context, num_downstr_bases)
             for record in results:
                 context, strand, mC, cov, vartype = record
                 if cov > 0 and len(context) == context_len:
