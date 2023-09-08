@@ -39,6 +39,7 @@ import pathlib
 import shlex
 import subprocess
 from pyfaidx import Fasta
+from collections import defaultdict, Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
