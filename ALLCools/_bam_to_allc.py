@@ -326,7 +326,20 @@ def _bam_to_allc_worker(
                 context, strand, mC, cov, vartype = record
                 if cov > 0 and len(context) == context_len:
                     line_counts += 1
-                    data = (f'{row[0]}\t{ref_pos+1}\t{strand}\t{context}\t{mC}\t{cov}\t{vartype}\n')
+                    data = (
+                        "\t".join(
+                            [
+                                fields[0],
+                                str(ref_pos + 1),
+                                strand,
+                                context,
+                                str(mC),
+                                str(cov),
+                                vartype,
+                            ]
+                        )
+                        + "\n"
+                    )
                     cov_dict[context] += cov
                     mc_dict[context] += mC
                     out += data
@@ -335,7 +348,6 @@ def _bam_to_allc_worker(
             # count converted and unconverted bases
             if fields[2] == "C":
                 # mpileup pos is 1-based, turn into 0 based
-                pos = int(fields[1]) - 1
                 try:
                     context = ref_context[num_downstr_bases:]
                 except Exception:  # complete context is not available, skip
@@ -349,7 +361,7 @@ def _bam_to_allc_worker(
                         "\t".join(
                             [
                                 cur_chrom,
-                                str(pos + 1),
+                                str(ref_pos + 1),
                                 "+",
                                 context,
                                 str(unconverted_c),
@@ -365,7 +377,6 @@ def _bam_to_allc_worker(
                     cur_out_pos += len(data)
 
             elif fields[2] == "G":
-                pos = int(fields[1]) - 1
                 try:
                     ref_context = reverse_complement(ref_context)
                     context = ref_context[num_downstr_bases:]
@@ -380,7 +391,7 @@ def _bam_to_allc_worker(
                         "\t".join(
                             [
                                 cur_chrom,
-                                str(pos + 1),  # ALLC pos is 1-based
+                                str(ref_pos + 1),  # ALLC pos is 1-based
                                 "-",
                                 context,
                                 str(unconverted_c),
