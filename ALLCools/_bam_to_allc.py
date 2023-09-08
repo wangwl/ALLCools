@@ -325,12 +325,12 @@ def _bam_to_allc_worker(
             for record in results:
                 context, strand, mC, cov, vartype = record
                 if cov > 0 and len(context) == context_len:
-                data = (f'{row[0]}\t{ref_pos+1}\t{strand}\t{context}\t{mC}\t{cov}\t{vartype}\n')
-                cov_dict[context] += cov
-                mc_dict[context] += mC
-                out += data
-                cur_out_pos += len(data)
-
+                    line_counts += 1
+                    data = (f'{row[0]}\t{ref_pos+1}\t{strand}\t{context}\t{mC}\t{cov}\t{vartype}\n')
+                    cov_dict[context] += cov
+                    mc_dict[context] += mC
+                    out += data
+                    cur_out_pos += len(data)
         else:
             # count converted and unconverted bases
             if fields[2] == "C":
