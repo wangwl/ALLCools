@@ -159,7 +159,10 @@ def cal_mC_atSNP(genotype, qualify_bases, ref_context, num_downstr_bases):
         mC_info = [mC_info]
     elif 'C' in genotype and 'T' in genotype:
         mC = mC_baseCounter['C']
-        coverage = mC_baseCounter['C'] + (mC_baseCounter['T'] - mC_baseCounter['C']) / 2 # assume same coverage on both alleles
+        if mC_baseCounter['T'] > 0:
+            coverage = mC_baseCounter['C'] + (mC_baseCounter['T'] - mC_baseCounter['C']) / 2 # assume same coverage on both alleles
+        else:
+            coverage = mC_baseCounter['C']
         context = 'C' + ref_context[num_downstr_bases+1:]
         strand = '+'
         mC_info = [context, strand, mC, coverage, 'heter_CT']
@@ -174,7 +177,10 @@ def cal_mC_atSNP(genotype, qualify_bases, ref_context, num_downstr_bases):
         mC_info = [mC_info]
     elif 'G' in genotype and 'A' in genotype:
         mC = mC_baseCounter['G']
-        coverage = mC_baseCounter['G'] + (mC_baseCounter['A'] - mC_baseCounter['G']) / 2 # assume same coverage on both alleles
+        if mC_baseCounter['A'] > 0: 
+            coverage = mC_baseCounter['G'] + (mC_baseCounter['A'] - mC_baseCounter['G']) / 2 # assume same coverage on both alleles
+        else:
+            coverage = mC_baseCounter['G']
         ref_context = reverse_complement(ref_context)
         context = 'C' + ref_context[num_downstr_bases+1:]
         strand = '-'
@@ -258,6 +264,7 @@ def _bam_to_allc_worker(
     result_handle = pipes.stdout
 
     output_file_handler = open_allc(output_path, mode="w", compresslevel=compress_level)
+
 
     # initialize variables
     complement = {"A": "T", "T": "A", "C": "G", "G": "C", "N": "N"}
@@ -412,7 +419,8 @@ def _bam_to_allc_worker(
                     cur_out_pos += len(data)
 
         if line_counts > buffer_line_number:
-            output_file_handler.write(out)
+            # output_file_handler.write(out)
+            output_file_handler.write()
             line_counts = 0
             out = ""
 
