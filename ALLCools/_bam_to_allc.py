@@ -413,8 +413,7 @@ def _bam_to_allc_worker(
                     cur_out_pos += len(data)
 
         if line_counts > buffer_line_number:
-            # output_file_handler.write(out)
-            output_file_handler.write()
+            output_file_handler.write(out)
             line_counts = 0
             out = ""
 
