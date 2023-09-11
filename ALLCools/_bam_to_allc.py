@@ -159,10 +159,7 @@ def cal_mC_atSNP(genotype, qualify_bases, ref_context, num_downstr_bases):
         mC_info = [mC_info]
     elif 'C' in genotype and 'T' in genotype:
         mC = mC_baseCounter['C']
-        if mC_baseCounter['T'] > 0:
-            coverage = mC_baseCounter['C'] + (mC_baseCounter['T'] - mC_baseCounter['C']) / 2 # assume same coverage on both alleles
-        else:
-            coverage = mC_baseCounter['C']
+        coverage = mC_baseCounter['C'] + mC_baseCounter['T']   ## ignore 'T' allele
         context = 'C' + ref_context[num_downstr_bases+1:]
         strand = '+'
         mC_info = [context, strand, mC, coverage, 'heter_CT']
@@ -177,10 +174,7 @@ def cal_mC_atSNP(genotype, qualify_bases, ref_context, num_downstr_bases):
         mC_info = [mC_info]
     elif 'G' in genotype and 'A' in genotype:
         mC = mC_baseCounter['G']
-        if mC_baseCounter['A'] > 0: 
-            coverage = mC_baseCounter['G'] + (mC_baseCounter['A'] - mC_baseCounter['G']) / 2 # assume same coverage on both alleles
-        else:
-            coverage = mC_baseCounter['G']
+        coverage = mC_baseCounter['G'] + mC_baseCounter['A']   ## ignore 'A' allele
         ref_context = reverse_complement(ref_context)
         context = 'C' + ref_context[num_downstr_bases+1:]
         strand = '-'
